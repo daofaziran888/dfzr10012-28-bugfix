@@ -30,6 +30,19 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/aggregate-dataset", response_model=PageResult[dict])
+def list_aggregate_dataset(
+    collector_id: str | None = Query(default=None, description="按采集器唯一标识过滤"),
+) -> PageResult[dict]:
+    """告警处理链路消费的聚合指标数据集。
+
+    与 /api/metric/aggregates 共用同一套查询规则与同一份结果：
+    同一采集器只有一条有效记录、一个版本，冲突口径（avg/sum）不会同时进入同一规则。
+    """
+    items = service.list_aggregate_dataset(collector_id)
+    return PageResult(items=items, total=len(items), page=1, size=len(items) or 1)
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条告警规则明细；不存在时给出可读的错误说明。"""

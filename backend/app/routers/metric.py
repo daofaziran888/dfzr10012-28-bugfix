@@ -30,6 +30,35 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/aggregates", response_model=PageResult[dict])
+def list_aggregates(
+    collector_id: str | None = Query(default=None, description="按采集器唯一标识过滤"),
+    page: int = 1,
+    size: int = 20,
+) -> PageResult[dict]:
+    """查询聚合指标数据集：每个采集器只返回唯一一条有效记录（含唯一标识、聚合口径、保留期）。"""
+    if size > 200:
+        raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
+    items, total = service.list_aggregates(collector_id=collector_id, page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/samples", response_model=PageResult[dict])
+def list_samples(
+    collector_id: str | None = Query(default=None, description="按采集器唯一标识过滤"),
+) -> PageResult[dict]:
+    """查询历史聚合样本：样本按原保留期与原口径保留，恢复流程不会删除或改写。"""
+    items = service.list_samples(collector_id)
+    return PageResult(items=items, total=len(items), page=1, size=len(items) or 1)
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出流作业指标采集清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "metric", "total": total, "items": items}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条指标采集器明细；不存在时给出可读的错误说明。"""
@@ -58,8 +87,19 @@ def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
     return ActionResult(ok=True, message=message, entry=entry)
 
 
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出流作业指标采集清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "metric", "total": total, "items": items}
+@router.post("/recover", response_model=ActionResult)
+def recover_collector(payload: EntryPayload) -> ActionResult:
+    """恢复指标采集器：读取指标名称、聚合方式、保留天数，校验通过后写入聚合指标数据集。
+
+    聚合方式与保留天数必须一起合法落库；校验失败时保留旧口径，不做任何覆盖。
+    并发恢复同一采集器只写入一次，重复请求复用首个恢复终态。
+    """
+    collector_id = str(
+        payload.values.get("采集器编号") or payload.values.get("collector_id") or ""
+    ).strip()
+    if not collector_id:
+        return ActionResult(ok=False, message="缺少采集器编号，无法执行恢复")
+    result, message, _written = service.recover(collector_id)
+    if result is None:
+        return ActionResult(ok=False, message=message)
+    return ActionResult(ok=True, message=message, entry=result)

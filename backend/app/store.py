@@ -8,6 +8,9 @@ from typing import Any
 
 from app.seed import SEED_ROWS
 
+# 内部数据集表：仅供指标恢复等业务链路读写，不作为独立业务模块出现在运营概览与健康统计里。
+INTERNAL_MODULES = frozenset({"metric_aggregate", "metric_sample"})
+
 
 class Store:
     def __init__(self) -> None:
@@ -16,10 +19,17 @@ class Store:
         }
 
     def module_names(self) -> list[str]:
-        return sorted(self._tables)
+        """对外可见的业务模块名；内部数据集表（如聚合指标数据集）不计入。"""
+        return sorted(name for name in self._tables if name not in INTERNAL_MODULES)
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])
+
+    def reset(self) -> None:
+        """把所有内存表恢复到种子数据初始态，供测试与运维重置使用。"""
+        self._tables = {
+            name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
+        }
 
     def find(self, module: str, entry_id: int) -> dict[str, Any] | None:
         for row in self.rows(module):

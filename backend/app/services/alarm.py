@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services import metric_recovery
 from app.store import store
 
 MODULE = "alarm"
@@ -13,6 +14,16 @@ NEGATIVE_ACTIONS = []
 
 
 class AlarmService:
+    def list_aggregate_dataset(
+        self, collector_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """告警处理链路读取的聚合指标数据集。
+
+        直接复用 metric_recovery 的统一查询结果：同一采集器只有一条有效记录、
+        一个数据集版本，avg 与 sum 等冲突口径不会同时进入同一条告警规则。
+        """
+        return metric_recovery.list_aggregates_for_alarm(collector_id)
+
     def list_entries(
         self,
         *,
